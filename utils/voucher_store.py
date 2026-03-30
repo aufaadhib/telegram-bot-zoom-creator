@@ -138,3 +138,25 @@ class VoucherStore:
 
             self._write(payload)
             return credits, new_balance
+
+    def consume_credits(self, user_id: int, amount: int) -> tuple[int, int]:
+        if amount <= 0:
+            raise ValueError("amount harus lebih dari 0.")
+
+        with self._lock:
+            payload = self._read()
+            balances: dict[str, Any] = payload["balances"]
+
+            old_balance_raw = balances.get(str(user_id), 0)
+            try:
+                old_balance = int(old_balance_raw)
+            except (TypeError, ValueError):
+                old_balance = 0
+
+            if old_balance < amount:
+                raise ValueError("Credits tidak cukup.")
+
+            new_balance = old_balance - amount
+            balances[str(user_id)] = new_balance
+            self._write(payload)
+            return amount, new_balance

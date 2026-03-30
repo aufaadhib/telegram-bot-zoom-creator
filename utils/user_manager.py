@@ -155,20 +155,9 @@ def return_user_vccs(chat_id: int, vccs: list[str]) -> int:
         payload = _read_db()
         bucket = _get_user_bucket(payload, chat_id)
         current: list[str] = [str(item) for item in bucket.get("vccs", []) if isinstance(item, str)]
-        existing = set(current)
-        returned: list[str] = []
-        for value in normalized:
-            if value in existing:
-                continue
-            returned.append(value)
-            existing.add(value)
-
-        if not returned:
-            return 0
-
-        bucket["vccs"] = returned + current
+        bucket["vccs"] = current + normalized
         _write_db(payload)
-        return len(returned)
+        return len(normalized)
 
 
 def get_user_account_count(chat_id: int) -> int:
@@ -223,19 +212,10 @@ def add_user_vccs(chat_id: int, raw_lines: list[str]) -> tuple[int, int, int]:
         payload = _read_db()
         bucket = _get_user_bucket(payload, chat_id)
         vccs: list[str] = [str(item) for item in bucket.get("vccs", []) if isinstance(item, str)]
-        existing = set(vccs)
-        added_count = 0
-        duplicate_count = 0
-        for value in normalized:
-            if value in existing:
-                duplicate_count += 1
-                continue
-            vccs.append(value)
-            existing.add(value)
-            added_count += 1
+        vccs.extend(normalized)
         bucket["vccs"] = vccs
         _write_db(payload)
-        return added_count, duplicate_count, invalid_count
+        return len(normalized), 0, invalid_count
 
 
 def delete_user_vccs(chat_id: int, raw_lines: list[str]) -> tuple[int, int]:

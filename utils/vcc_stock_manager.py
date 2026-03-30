@@ -104,20 +104,9 @@ def return_stock_vccs(vccs: list[str]) -> int:
     with _LOCK:
         payload = _read_db()
         current: list[str] = list(payload["vccs"])
-        existing = set(current)
-        returned: list[str] = []
-        for value in normalized:
-            if value in existing:
-                continue
-            returned.append(value)
-            existing.add(value)
-
-        if not returned:
-            return 0
-
-        payload["vccs"] = returned + current
+        payload["vccs"] = current + normalized
         _write_db(payload)
-        return len(returned)
+        return len(normalized)
 
 
 def add_stock_vccs(raw_lines: list[str]) -> tuple[int, int, int]:
@@ -139,18 +128,7 @@ def add_stock_vccs(raw_lines: list[str]) -> tuple[int, int, int]:
     with _LOCK:
         payload = _read_db()
         vccs: list[str] = list(payload["vccs"])
-        existing = set(vccs)
-        added_count = 0
-        duplicate_count = 0
-
-        for value in normalized:
-            if value in existing:
-                duplicate_count += 1
-                continue
-            vccs.append(value)
-            existing.add(value)
-            added_count += 1
-
+        vccs.extend(normalized)
         payload["vccs"] = vccs
         _write_db(payload)
-        return added_count, duplicate_count, invalid_count
+        return len(normalized), 0, invalid_count
