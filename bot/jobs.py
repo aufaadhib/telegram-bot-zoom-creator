@@ -499,7 +499,7 @@ def process_selenium_job(
             app,
             chat_id,
             (
-                f"{summary}\n\n"
+                f"<blockquote>{html.escape(summary)}</blockquote>\n\n"
                 "Akun berhasil (Email|Password):\n"
                 f"<pre>{html.escape(account_preview_text)}</pre>\n\n"
                 "VCC berhasil:\n"

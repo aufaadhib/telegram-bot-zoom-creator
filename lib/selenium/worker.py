@@ -346,13 +346,14 @@ def _run_zoom_signup_initial(
         street_input.send_keys(Keys.ENTER)
         logger.info("Street filled + enter | %s", log_ctx)
         _emit_progress(progress_callback, "Alamat jalan diisi.")
+        _dismiss_address_autocomplete(driver, street_input)
 
         zip_input = wait.until(EC.visibility_of_element_located((By.ID, "addr-zip")))
         city_input = wait.until(EC.visibility_of_element_located((By.ID, "addr-city")))
         state_input = wait.until(EC.visibility_of_element_located((By.ID, "addr-state")))
-        _fill_input(zip_input, "12325")
-        _fill_input(city_input, "Kedawung")
-        _fill_input(state_input, "Jawa Barat")
+        _fill_input(zip_input, "12325", driver=driver)
+        _fill_input(city_input, "Kedawung", driver=driver)
+        _fill_input(state_input, "Jawa Barat", driver=driver)
         logger.info("Zip/City/State filled | %s", log_ctx)
         _emit_progress(progress_callback, "Zip, kota, provinsi diisi.")
 
@@ -595,11 +596,23 @@ def _click_element_human(driver: webdriver.Chrome, element) -> None:
         _click_element(driver, element)
 
 
-def _fill_input(element, value: str) -> None:
-    element.click()
-    element.send_keys(Keys.CONTROL, "a")
-    element.send_keys(Keys.BACKSPACE)
-    element.send_keys(value)
+def _fill_input(element, value: str, driver: webdriver.Chrome | None = None) -> None:
+    try:
+        element.click()
+        element.send_keys(Keys.CONTROL, "a")
+        element.send_keys(Keys.BACKSPACE)
+        element.send_keys(value)
+    except Exception:
+        if not driver:
+            raise
+        # Fallback when click is intercepted by floating autocomplete/dropdown.
+        driver.execute_script(
+            "arguments[0].focus();"
+            "arguments[0].value='';"
+            "arguments[0].dispatchEvent(new Event('input', {bubbles:true}));",
+            element,
+        )
+        element.send_keys(value)
 
 
 def _fill_input_human(driver: webdriver.Chrome, element, value: str) -> None:
@@ -608,6 +621,20 @@ def _fill_input_human(driver: webdriver.Chrome, element, value: str) -> None:
     _force_clear_input(driver, element)
     for char in value:
         element.send_keys(char)
+
+
+def _dismiss_address_autocomplete(driver: webdriver.Chrome, field_element) -> None:
+    try:
+        field_element.send_keys(Keys.ESCAPE)
+        field_element.send_keys(Keys.ESCAPE)
+    except Exception:
+        pass
+    try:
+        WebDriverWait(driver, 2).until(
+            lambda d: len(d.find_elements(By.CSS_SELECTOR, "li.zbo-autocomplete__option")) == 0
+        )
+    except Exception:
+        pass
 
 
 def _find_visible_input(driver: webdriver.Chrome, by: By, selector: str):
