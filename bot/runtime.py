@@ -4,6 +4,7 @@ import threading
 
 from utils.config import Settings
 from utils.job_store import JobStore, ProfileLockManager
+from utils.otp_manager import OtpManager
 from utils.voucher_store import VoucherStore
 
 
@@ -12,6 +13,7 @@ class Runtime:
     settings: Settings
     jobs: JobStore
     vouchers: VoucherStore
+    otp_manager: OtpManager
     profile_locks: ProfileLockManager
     driver_slots: threading.BoundedSemaphore
     executor: ThreadPoolExecutor
@@ -23,6 +25,7 @@ def build_runtime(settings: Settings) -> Runtime:
         settings=settings,
         jobs=JobStore(),
         vouchers=VoucherStore(settings.voucher_db_path),
+        otp_manager=OtpManager(),
         profile_locks=ProfileLockManager(),
         driver_slots=threading.BoundedSemaphore(settings.max_drivers),
         executor=ThreadPoolExecutor(max_workers=executor_workers, thread_name_prefix="selenium"),

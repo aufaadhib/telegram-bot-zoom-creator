@@ -12,7 +12,12 @@ class Settings:
     max_drivers: int
     cost_per_account: int
     selenium_headless: bool
+    selenium_auto_close: bool
+    selenium_locale: str
+    selenium_timezone: str
     selenium_wait_timeout: int
+    payment_retry_on_card_error: bool
+    payment_max_card_attempts: int
     selenium_profile_dir: Path
     voucher_db_path: Path
     chromedriver_path: str
@@ -42,7 +47,12 @@ def load_settings(base_dir: Path) -> Settings:
         max_drivers=max_drivers,
         cost_per_account=int(os.getenv("COST_PER_ACCOUNT", "2")),
         selenium_headless=os.getenv("SELENIUM_HEADLESS", "false").lower() == "true",
+        selenium_auto_close=os.getenv("SELENIUM_AUTO_CLOSE", "true").lower() == "true",
+        selenium_locale=os.getenv("SELENIUM_LOCALE", "id-ID").strip(),
+        selenium_timezone=os.getenv("SELENIUM_TIMEZONE", "Asia/Jakarta").strip(),
         selenium_wait_timeout=int(os.getenv("SELENIUM_WAIT_TIMEOUT", "20")),
+        payment_retry_on_card_error=os.getenv("PAYMENT_RETRY_ON_CARD_ERROR", "false").lower() == "true",
+        payment_max_card_attempts=max(1, int(os.getenv("PAYMENT_MAX_CARD_ATTEMPTS", "3"))),
         selenium_profile_dir=(base_dir / os.getenv("SELENIUM_PROFILE_DIR", "data/driver_profiles")).resolve(),
         voucher_db_path=(base_dir / os.getenv("VOUCHER_DB_PATH", "data/vouchers.json")).resolve(),
         chromedriver_path=os.getenv("CHROMEDRIVER_PATH", "").strip(),

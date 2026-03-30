@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 from datetime import datetime, timedelta, timezone
 from functools import partial
 import html
@@ -47,44 +47,46 @@ from utils.vcc_stock_manager import (
 
 _VOUCHER_CODE_PATTERN = re.compile(r"^\s*(VC-[A-Za-z0-9]{10})\s*$", re.IGNORECASE)
 _COMMAND_PREFIX_PATTERN = re.compile(r"^/\w+(?:@\w+)?\s*", re.DOTALL)
+_OTP_CODE_PATTERN = re.compile(r"^\s*(\d{6})\s*$")
 
 
 def _start_keyboard(is_admin: bool = False, has_credits: bool = False) -> InlineKeyboardMarkup:
     buttons = []
 
     if is_admin:
-        buttons.append([InlineKeyboardButton("ðŸ›  Admin Panel", callback_data="admin_panel")])
+        buttons.append([InlineKeyboardButton("🛠 Admin Panel", callback_data="admin_panel")])
 
     if has_credits:
-        buttons.append([InlineKeyboardButton("ðŸš€ Mulai Buat Akun", callback_data="create_account")])
-        buttons.append([InlineKeyboardButton("ðŸ“… Schedule Meeting", callback_data="schedule_meeting")])
+        buttons.append([InlineKeyboardButton("🎁 Redeem Voucher", callback_data="redeem_voucher")])
+        buttons.append([InlineKeyboardButton("🚀 Mulai Buat Akun", callback_data="create_account")])
+        buttons.append([InlineKeyboardButton("📅 Schedule Meeting", callback_data="schedule_meeting")])
         buttons.append(
             [
-                InlineKeyboardButton("ðŸ’³ Virtual Credit Card", callback_data="vcc_menu"),
+                InlineKeyboardButton("💳 Virtual Credit Card", callback_data="vcc_menu"),
             ]
         )
         buttons.append(
             [
-                InlineKeyboardButton("ðŸ”’ Set Password", callback_data="set_password"),
-                InlineKeyboardButton("ðŸŒ Domain", callback_data="user_domain_menu"),
+                InlineKeyboardButton("🔒 Set Password", callback_data="set_password"),
+                InlineKeyboardButton("🌐 Domain", callback_data="user_domain_menu"),
             ]
         )
     else:
-        buttons.append([InlineKeyboardButton("ðŸŽ Redeem Voucher", callback_data="redeem_voucher")])
+        buttons.append([InlineKeyboardButton("🎁 Redeem Voucher", callback_data="redeem_voucher")])
 
-    buttons.append([InlineKeyboardButton("â„¹ï¸ Info", callback_data="info")])
+    buttons.append([InlineKeyboardButton("ℹ️ Info", callback_data="info")])
     return InlineKeyboardMarkup(buttons)
 
 
 def _back_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("â†© Back", callback_data="back_to_start")]]
+        [[InlineKeyboardButton("↩ Back", callback_data="back_to_start")]]
     )
 
 
 def _menu_back_keyboard(back_callback: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("â†© Back", callback_data=back_callback)]]
+        [[InlineKeyboardButton("↩ Back", callback_data=back_callback)]]
     )
 
 
@@ -165,7 +167,7 @@ def _build_user_domain_summary(user_id: int) -> str:
     source = "custom domain user" if custom_domain else ("default domain admin" if default_domain else "-")
 
     return (
-        "ðŸŒ <b>Domain Saya</b>\n\n"
+        "🌐 <b>Domain Saya</b>\n\n"
         f"Custom Domain: <code>{custom_text}</code>\n"
         f"Default Domain: <code>{default_text}</code>\n"
         f"Effective Domain: <code>{effective_text}</code>\n"
@@ -177,9 +179,9 @@ def _build_user_domain_summary(user_id: int) -> str:
 def _user_domain_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("âž• Set/Update Custom Domain", callback_data="user_set_domain")],
-            [InlineKeyboardButton("ðŸ§¹ Gunakan Default (Hapus Custom)", callback_data="user_clear_domain")],
-            [InlineKeyboardButton("ðŸ  Home", callback_data="back_to_start")],
+            [InlineKeyboardButton("➕ Set/Update Custom Domain", callback_data="user_set_domain")],
+            [InlineKeyboardButton("🧹 Gunakan Default (Hapus Custom)", callback_data="user_clear_domain")],
+            [InlineKeyboardButton("🏠 Home", callback_data="back_to_start")],
         ]
     )
 
@@ -187,9 +189,9 @@ def _user_domain_keyboard() -> InlineKeyboardMarkup:
 def _create_account_source_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("ðŸ¦ Gunakan VCC Store", callback_data="create_account_vcc_store")],
-            [InlineKeyboardButton("ðŸ’³ Gunakan VCC Pribadi", callback_data="create_account_vcc_personal")],
-            [InlineKeyboardButton("â†© Back", callback_data="back_to_start")],
+            [InlineKeyboardButton("🏦 Gunakan VCC Store", callback_data="create_account_vcc_store")],
+            [InlineKeyboardButton("💳 Gunakan VCC Pribadi", callback_data="create_account_vcc_personal")],
+            [InlineKeyboardButton("↩ Back", callback_data="back_to_start")],
         ]
     )
 
@@ -201,7 +203,7 @@ def _create_account_duration_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton("7 Hari", callback_data="create_account_duration_7"),
                 InlineKeyboardButton("14 Hari", callback_data="create_account_duration_14"),
             ],
-            [InlineKeyboardButton("â†© Back", callback_data="create_account")],
+            [InlineKeyboardButton("↩ Back", callback_data="create_account")],
         ]
     )
 
@@ -215,7 +217,7 @@ def _create_account_qty_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton("3", callback_data="create_account_qty_3"),
             ],
             [InlineKeyboardButton("Custom", callback_data="create_account_qty_custom")],
-            [InlineKeyboardButton("â†© Back", callback_data="create_account")],
+            [InlineKeyboardButton("↩ Back", callback_data="create_account")],
         ]
     )
 
@@ -224,6 +226,11 @@ def _clear_create_account_flow(context: ContextTypes.DEFAULT_TYPE) -> None:
     context.chat_data.pop("create_account_vcc_mode", None)
     context.chat_data.pop("create_account_trial_days", None)
     context.chat_data.pop("create_account_qty", None)
+
+
+def _is_create_job_started_message(text: str) -> bool:
+    value = (text or "").strip()
+    return ("Job ID:" in value) and ("Selenium sedang dijalankan" in value)
 
 
 def _can_bypass_credit_check(user_id: int, runtime: Runtime) -> bool:
@@ -282,21 +289,21 @@ def _build_start_overview(update: Update, runtime: Runtime) -> str:
     effective_domain_text = effective_domain or "(belum ada)"
 
     return (
-        f"Halo {display_name} ðŸ‘‹\n"
+        f"Halo {display_name} 👋\n"
         f"{_format_indonesian_datetime()}\n\n"
         "User Info\n"
-        f"â”” ID: {user_id}\n"
-        f"â”” Username: {username}\n"
-        f"â”” Total Account (User): {user_account_count}\n"
-        f"â”” Credits: {credits}\n\n"
+        f"└ ID: {user_id}\n"
+        f"└ Username: {username}\n"
+        f"└ Total Account (User): {user_account_count}\n"
+        f"└ Credits: {credits}\n\n"
         "BOT Stats\n"
-        f"â”” Cost per Account: {runtime.settings.cost_per_account} Credits\n"
-        f"â”” Total Account (Global): {global_accounts}\n"
-        f"â”” Total User: {total_users}\n\n"
+        f"└ Cost per Account: {runtime.settings.cost_per_account} Credits\n"
+        f"└ Total Account (Global): {global_accounts}\n"
+        f"└ Total User: {total_users}\n\n"
         "Configuration\n"
-        f"â”” Password: {password}\n"
-        f"â”” Custom Domain: {custom_domain_text}\n"
-        f"â”” Effective Domain: {effective_domain_text}"
+        f"└ Password: {password}\n"
+        f"└ Custom Domain: {custom_domain_text}\n"
+        f"└ Effective Domain: {effective_domain_text}"
     )
 
 
@@ -323,7 +330,7 @@ def _extract_voucher_code(text: str) -> str | None:
 
 def _redeem_instruction_text() -> str:
     return (
-        "ðŸŽ <b>Redeem Voucher</b>\n\n"
+        "🎁 <b>Redeem Voucher</b>\n\n"
         "Kirim kode voucher kamu dengan format:\n"
         "<code>/redeem KODE_VOUCHER</code>\n"
         "atau langsung kirim <code>KODE_VOUCHER</code>"
@@ -392,7 +399,7 @@ async def _handle_redeem_code(update: Update, code: str, runtime: Runtime) -> No
     except ValueError as exc:
         if update.message:
             await update.message.reply_text(
-                f"âŒ Redeem gagal: {exc}",
+                f"❌ Redeem gagal: {exc}",
                 parse_mode="HTML",
                 reply_markup=_back_keyboard(),
             )
@@ -400,7 +407,7 @@ async def _handle_redeem_code(update: Update, code: str, runtime: Runtime) -> No
 
     is_admin, has_credits = _resolve_user_flags(user_id, runtime)
     success_text = (
-        "âœ… <b>Redeem berhasil</b>\n\n"
+        "✅ <b>Redeem berhasil</b>\n\n"
         f"Kode: <code>{code}</code>\n"
         f"Credits ditambahkan: <b>{credits}</b>\n"
         f"Saldo sekarang: <b>{new_balance}</b>"
@@ -437,7 +444,7 @@ async def _handle_user_set_password_input(
     if errors:
         await update.message.reply_text(
             (
-                "âŒ <b>Password tidak valid</b>\n\n"
+                "❌ <b>Password tidak valid</b>\n\n"
                 f"{_password_requirements_text()}\n\n"
                 "<b>Detail:</b>\n"
                 f"{_password_error_lines(errors)}\n\n"
@@ -455,7 +462,7 @@ async def _handle_user_set_password_input(
     preview_password = f"<tg-spoiler>{html.escape(password)}</tg-spoiler>"
     await update.message.reply_text(
         (
-            "ðŸ”’ <b>Password default tersimpan</b>\n\n"
+            "🔒 <b>Password default tersimpan</b>\n\n"
             f"Preview: {preview_password}\n"
             "Password ini akan dipakai saat flow auto create dijalankan."
         ),
@@ -528,7 +535,7 @@ async def _handle_admin_set_password_input(
 
     await update.message.reply_text(
         (
-            "ðŸ”’ <b>Admin Set Password Result</b>\n\n"
+            "🔒 <b>Admin Set Password Result</b>\n\n"
             f"Berhasil set: <b>{success}</b>\n"
             f"Invalid format: <b>{invalid_format}</b>\n"
             f"Invalid policy: <b>{invalid_policy}</b>\n"
@@ -566,7 +573,7 @@ async def _handle_user_domain_input(
     if not domain:
         await update.message.reply_text(
             (
-                "âŒ Domain tidak valid.\n"
+                "❌ Domain tidak valid.\n"
                 "Contoh format benar: <code>example.com</code>\n"
                 "Bisa kirim dengan/without https, nanti akan dinormalisasi."
             ),
@@ -581,7 +588,7 @@ async def _handle_user_domain_input(
 
     await update.message.reply_text(
         (
-            "âœ… <b>Custom domain tersimpan</b>\n\n"
+            "✅ <b>Custom domain tersimpan</b>\n\n"
             f"Domain: <code>{domain}</code>\n"
             "Domain ini akan diprioritaskan saat auto create."
         ),
@@ -625,7 +632,7 @@ async def _handle_admin_domain_input(
     if awaiting == "admin_add_domain":
         added, duplicate, invalid = add_domains(lines)
         result_text = (
-            "ðŸŒ <b>Add Default Domain Result</b>\n\n"
+            "🌐 <b>Add Default Domain Result</b>\n\n"
             f"Berhasil tambah: <b>{added}</b>\n"
             f"Duplikat: <b>{duplicate}</b>\n"
             f"Invalid: <b>{invalid}</b>"
@@ -633,7 +640,7 @@ async def _handle_admin_domain_input(
     else:
         removed, failed = remove_domains(lines)
         result_text = (
-            "ðŸŒ <b>Remove Default Domain Result</b>\n\n"
+            "🌐 <b>Remove Default Domain Result</b>\n\n"
             f"Berhasil hapus: <b>{removed}</b>\n"
             f"Tidak ditemukan/invalid: <b>{failed}</b>"
         )
@@ -726,7 +733,7 @@ async def _handle_vcc_input(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if awaiting == "vcc":
         added, duplicate, invalid = add_user_vccs(chat_id, lines)
         result_text = (
-            "âž• <b>Add Vcc Result</b>\n\n"
+            "➕ <b>Add Vcc Result</b>\n\n"
             f"Berhasil tambah: <b>{added}</b>\n"
             f"Duplikat: <b>{duplicate}</b>\n"
             f"Invalid: <b>{invalid}</b>"
@@ -734,14 +741,14 @@ async def _handle_vcc_input(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     elif awaiting == "vcc_edit":
         edited, failed = edit_user_vccs(chat_id, lines)
         result_text = (
-            "âœï¸ <b>Edit Vcc Result</b>\n\n"
+            "✏️ <b>Edit Vcc Result</b>\n\n"
             f"Berhasil edit: <b>{edited}</b>\n"
             f"Gagal/invalid: <b>{failed}</b>"
         )
     else:
         deleted, failed = delete_user_vccs(chat_id, lines)
         result_text = (
-            "ðŸ—‘ <b>Delete Vcc Result</b>\n\n"
+            "🗑 <b>Delete Vcc Result</b>\n\n"
             f"Berhasil hapus: <b>{deleted}</b>\n"
             f"Tidak ditemukan/invalid: <b>{failed}</b>"
         )
@@ -815,7 +822,7 @@ async def add_vcc_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     total_now = len(get_user_vccs(update.effective_chat.id))
     await update.message.reply_text(
         (
-            "âž• <b>Add Vcc Result</b>\n\n"
+            "➕ <b>Add Vcc Result</b>\n\n"
             f"Berhasil tambah: <b>{added}</b>\n"
             f"Duplikat: <b>{duplicate}</b>\n"
             f"Invalid: <b>{invalid}</b>\n\n"
@@ -851,7 +858,7 @@ async def add_default_domain_command(
     domains = get_domains()
     await update.message.reply_text(
         (
-            "ðŸŒ <b>Add Default Domain Result</b>\n\n"
+            "🌐 <b>Add Default Domain Result</b>\n\n"
             f"Berhasil tambah: <b>{added}</b>\n"
             f"Duplikat: <b>{duplicate}</b>\n"
             f"Invalid: <b>{invalid}</b>\n\n"
@@ -888,7 +895,7 @@ async def remove_default_domain_command(
     domains = get_domains()
     await update.message.reply_text(
         (
-            "ðŸŒ <b>Remove Default Domain Result</b>\n\n"
+            "🌐 <b>Remove Default Domain Result</b>\n\n"
             f"Berhasil hapus: <b>{removed}</b>\n"
             f"Tidak ditemukan/invalid: <b>{failed}</b>\n\n"
             f"<b>Default Domain ({len(domains)}):</b>\n"
@@ -902,6 +909,17 @@ async def remove_default_domain_command(
 async def text_message_router(update: Update, context: ContextTypes.DEFAULT_TYPE, runtime: Runtime) -> None:
     if not update.message:
         return
+    if update.effective_user:
+        text = (update.message.text or "").strip()
+        otp_match = _OTP_CODE_PATTERN.match(text)
+        if otp_match and runtime.otp_manager.has_pending_for_user(update.effective_user.id):
+            target_job = runtime.otp_manager.submit_for_user_active_job(
+                update.effective_user.id,
+                otp_match.group(1),
+            )
+            if target_job:
+                await update.message.reply_text(f"OTP diterima untuk job {target_job}.")
+                return
 
     handled_user_password = await _handle_user_set_password_input(update, context)
     if handled_user_password:
@@ -934,6 +952,37 @@ async def text_message_router(update: Update, context: ContextTypes.DEFAULT_TYPE
     code = _extract_voucher_code(update.message.text or "")
     if code:
         await _handle_redeem_code(update, code, runtime)
+
+
+async def otp_command(update: Update, context: ContextTypes.DEFAULT_TYPE, runtime: Runtime) -> None:
+    if not update.message or not update.effective_user:
+        return
+
+    args = [arg.strip() for arg in context.args if arg.strip()]
+    user_id = update.effective_user.id
+
+    if len(args) == 1 and _OTP_CODE_PATTERN.match(args[0]):
+        job_id = runtime.otp_manager.submit_for_user_active_job(user_id, args[0])
+        if not job_id:
+            await update.message.reply_text("Tidak ada request OTP aktif.")
+            return
+        await update.message.reply_text(f"OTP diterima untuk job {job_id}.")
+        return
+
+    if len(args) >= 2:
+        job_id = args[0]
+        otp_code = args[1]
+        if not _OTP_CODE_PATTERN.match(otp_code):
+            await update.message.reply_text("Format OTP harus 6 digit angka. Contoh: /otp JOBID 123456")
+            return
+        submitted = runtime.otp_manager.submit_for_job(user_id=user_id, job_id=job_id, otp_code=otp_code)
+        if not submitted:
+            await update.message.reply_text("Job OTP tidak ditemukan/expired atau bukan milik kamu.")
+            return
+        await update.message.reply_text(f"OTP diterima untuk job {job_id}.")
+        return
+
+    await update.message.reply_text("Gunakan: /otp <job_id> <6digit> atau /otp <6digit>")
 
 
 async def run_command(update: Update, context: ContextTypes.DEFAULT_TYPE, runtime: Runtime) -> None:
@@ -1030,7 +1079,7 @@ async def admin_panel_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.answer()
     await _safe_edit_menu(
         query,
-        "ðŸ›  <b>Admin Panel</b>\n\nPilih aksi admin:",
+        "🛠 <b>Admin Panel</b>\n\nPilih aksi admin:",
         _admin_keyboard(),
     )
 
@@ -1057,7 +1106,7 @@ async def set_password_callback(update: Update, context: ContextTypes.DEFAULT_TY
     context.chat_data["prompt_msg_id"] = query.message.message_id
 
     caption_text = (
-        "ðŸ”’ <b>Set Password Auto Create</b>\n\n"
+        "🔒 <b>Set Password Auto Create</b>\n\n"
         f"Status saat ini: <b>{status_text}</b>\n"
         f"Preview: {preview_password}\n\n"
         "Kirim password baru kamu di chat ini.\n"
@@ -1098,7 +1147,7 @@ async def admin_set_password_callback(update: Update, context: ContextTypes.DEFA
     context.chat_data["prompt_msg_id"] = query.message.message_id
 
     caption_text = (
-        "ðŸ”’ <b>Admin Set Password (Bulk)</b>\n\n"
+        "🔒 <b>Admin Set Password (Bulk)</b>\n\n"
         "Fungsi: set <b>password default user</b> untuk flow <b>Create Account</b>.\n\n"
         "Kirim data dengan format:\n"
         "<code>USER_ID|PASSWORD</code>\n\n"
@@ -1231,7 +1280,7 @@ async def user_set_domain_callback(update: Update, context: ContextTypes.DEFAULT
     context.chat_data["prompt_msg_id"] = query.message.message_id
 
     caption_text = (
-        "ðŸŒ <b>Set Custom Domain</b>\n\n"
+        "🌐 <b>Set Custom Domain</b>\n\n"
         "Kirim domain custom kamu di chat ini.\n"
         "Contoh: <code>example.com</code>\n\n"
         "Domain custom akan diprioritaskan dari default domain admin."
@@ -1266,7 +1315,7 @@ async def user_clear_domain_callback(update: Update, context: ContextTypes.DEFAU
     await _safe_edit_menu(
         query,
         (
-            "ðŸ§¹ <b>Custom domain dihapus</b>\n\n"
+            "🧹 <b>Custom domain dihapus</b>\n\n"
             "Sekarang sistem akan pakai default domain dari admin (jika tersedia).\n\n"
             f"{_build_user_domain_summary(update.effective_user.id)}"
         ),
@@ -1289,15 +1338,15 @@ async def admin_domain_menu_callback(update: Update, context: ContextTypes.DEFAU
     keyboard = InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("âž• Add Domain", callback_data="admin_add_domain"),
-                InlineKeyboardButton("ðŸ—‘ Remove Domain", callback_data="admin_remove_domain"),
+                InlineKeyboardButton("➕ Add Domain", callback_data="admin_add_domain"),
+                InlineKeyboardButton("🗑 Remove Domain", callback_data="admin_remove_domain"),
             ],
-            [InlineKeyboardButton("ðŸ  Home", callback_data="back_to_start")],
+            [InlineKeyboardButton("🏠 Home", callback_data="back_to_start")],
         ]
     )
 
     caption_text = (
-        "ðŸŒ <b>Admin Default Domain Menu</b>\n\n"
+        "🌐 <b>Admin Default Domain Menu</b>\n\n"
         f"<b>Default Domain ({len(domains)}):</b>\n"
         f"{list_text}\n\n"
         "Default domain ini dipakai jika user belum set custom domain."
@@ -1337,7 +1386,7 @@ async def admin_add_domain_callback(update: Update, context: ContextTypes.DEFAUL
         if query.message.photo:
             await query.edit_message_caption(
                 caption=(
-                    "ðŸŒ <b>Add Default Domain</b>\n\n"
+                    "🌐 <b>Add Default Domain</b>\n\n"
                     f"<b>Default Domain ({len(domains)}):</b>\n"
                     f"{d_list}\n\n"
                     "Kirim domain baru (boleh banyak baris):\n"
@@ -1345,13 +1394,13 @@ async def admin_add_domain_callback(update: Update, context: ContextTypes.DEFAUL
                 ),
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("â†© Back", callback_data="admin_domain_menu")]]
+                    [[InlineKeyboardButton("↩ Back", callback_data="admin_domain_menu")]]
                 ),
             )
         else:
             await query.edit_message_text(
                 text=(
-                    "ðŸŒ <b>Add Default Domain</b>\n\n"
+                    "🌐 <b>Add Default Domain</b>\n\n"
                     f"<b>Default Domain ({len(domains)}):</b>\n"
                     f"{d_list}\n\n"
                     "Kirim domain baru (boleh banyak baris):\n"
@@ -1359,7 +1408,7 @@ async def admin_add_domain_callback(update: Update, context: ContextTypes.DEFAUL
                 ),
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("â†© Back", callback_data="admin_domain_menu")]]
+                    [[InlineKeyboardButton("↩ Back", callback_data="admin_domain_menu")]]
                 ),
             )
     except BadRequest:
@@ -1388,7 +1437,7 @@ async def admin_remove_domain_callback(
         if query.message.photo:
             await query.edit_message_caption(
                 caption=(
-                    "ðŸŒ <b>Remove Default Domain</b>\n\n"
+                    "🌐 <b>Remove Default Domain</b>\n\n"
                     f"<b>Default Domain ({len(domains)}):</b>\n"
                     f"{d_list}\n\n"
                     "Kirim domain yang ingin dihapus (boleh banyak baris):\n"
@@ -1396,13 +1445,13 @@ async def admin_remove_domain_callback(
                 ),
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("â†© Back", callback_data="admin_domain_menu")]]
+                    [[InlineKeyboardButton("↩ Back", callback_data="admin_domain_menu")]]
                 ),
             )
         else:
             await query.edit_message_text(
                 text=(
-                    "ðŸŒ <b>Remove Default Domain</b>\n\n"
+                    "🌐 <b>Remove Default Domain</b>\n\n"
                     f"<b>Default Domain ({len(domains)}):</b>\n"
                     f"{d_list}\n\n"
                     "Kirim domain yang ingin dihapus (boleh banyak baris):\n"
@@ -1410,7 +1459,7 @@ async def admin_remove_domain_callback(
                 ),
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("â†© Back", callback_data="admin_domain_menu")]]
+                    [[InlineKeyboardButton("↩ Back", callback_data="admin_domain_menu")]]
                 ),
             )
     except BadRequest:
@@ -1448,17 +1497,17 @@ async def vcc_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     chat_id = query.message.chat.id
     vccs = get_user_vccs(chat_id)
     caption_text = (
-        "ðŸ’³ <b>Vcc Menu</b>\n\n"
+        "💳 <b>Vcc Menu</b>\n\n"
         f"Total tersimpan: <b>{len(vccs)}</b> VCC\n\n"
         "Pilih aksi VCC:"
     )
     keyboard = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("âž• Add VCC", callback_data="vcc_add"),
-            InlineKeyboardButton("âœï¸ Edit VCC", callback_data="vcc_edit"),
+            InlineKeyboardButton("➕ Add VCC", callback_data="vcc_add"),
+            InlineKeyboardButton("✏️ Edit VCC", callback_data="vcc_edit"),
         ],
-        [InlineKeyboardButton("ðŸ—‘ Delete VCC", callback_data="vcc_delete")],
-        [InlineKeyboardButton("ðŸ  Home", callback_data="back_to_start")],
+        [InlineKeyboardButton("🗑 Delete VCC", callback_data="vcc_delete")],
+        [InlineKeyboardButton("🏠 Home", callback_data="back_to_start")],
     ])
     try:
         if query.message.photo:
@@ -1482,7 +1531,7 @@ async def vcc_add_menu_callback(update: Update, context: ContextTypes.DEFAULT_TY
     vccs = get_user_vccs(chat_id)
 
     caption_text = (
-        "âž• <b>Add Vcc</b>\n\n"
+        "➕ <b>Add Vcc</b>\n\n"
         f"<b>Total tersimpan:</b> {len(vccs)} VCC\n\n"
         "Kirimkan VCC baru kamu di sini.\n"
         "Format: <code>NomorKartu|MM|YY|CVV</code>\n"
@@ -1520,7 +1569,7 @@ async def vcc_edit_menu_callback(update: Update, context: ContextTypes.DEFAULT_T
     vcc_preview = "\n".join(f"  {i + 1}. <code>{v}</code>" for i, v in enumerate(vccs[:10])) if vccs else "  Belum ada"
 
     caption_text = (
-        "âœï¸ <b>Edit Vcc</b>\n\n"
+        "✏️ <b>Edit Vcc</b>\n\n"
         f"<b>Total tersimpan:</b> {len(vccs)} VCC\n"
         f"{vcc_preview}\n\n"
         "Format edit:\n"
@@ -1560,7 +1609,7 @@ async def vcc_delete_menu_callback(update: Update, context: ContextTypes.DEFAULT
     vcc_preview = "\n".join(f"  {i + 1}. <code>{v}</code>" for i, v in enumerate(vccs[:10])) if vccs else "  Belum ada"
 
     caption_text = (
-        "ðŸ—‘ <b>Delete Vcc</b>\n\n"
+        "🗑 <b>Delete Vcc</b>\n\n"
         f"<b>Total tersimpan:</b> {len(vccs)} VCC\n"
         f"{vcc_preview}\n\n"
         "Kirimkan VCC yang ingin dihapus (boleh banyak baris)."
@@ -1603,12 +1652,12 @@ async def gen_voucher_callback(update: Update, context: ContextTypes.DEFAULT_TYP
                 InlineKeyboardButton("25 Credits", callback_data="gen_v_25"),
                 InlineKeyboardButton("50 Credits", callback_data="gen_v_50"),
             ],
-            [InlineKeyboardButton("â†© Back", callback_data="admin_panel")],
+            [InlineKeyboardButton("↩ Back", callback_data="admin_panel")],
         ]
     )
     await _safe_edit_menu(
         query,
-        "ðŸŽŸï¸ <b>Generate Voucher</b>\n\n<b>Step 1:</b> Pilih nominal Credits per voucher:",
+        "🎟️ <b>Generate Voucher</b>\n\n<b>Step 1:</b> Pilih nominal Credits per voucher:",
         keyboard,
     )
 
@@ -1643,13 +1692,13 @@ async def gen_voucher_qty_callback(update: Update, context: ContextTypes.DEFAULT
                 InlineKeyboardButton("20", callback_data=f"gen_vq_{acct_count}_20"),
                 InlineKeyboardButton("50", callback_data=f"gen_vq_{acct_count}_50"),
             ],
-            [InlineKeyboardButton("â†© Back", callback_data="gen_voucher")],
+            [InlineKeyboardButton("↩ Back", callback_data="gen_voucher")],
         ]
     )
     await _safe_edit_menu(
         query,
         (
-            "ðŸŽŸï¸ <b>Generate Voucher</b>\n\n"
+            "🎟️ <b>Generate Voucher</b>\n\n"
             f"Nominal: <b>{acct_count} Credits</b> per voucher\n\n"
             "<b>Step 2:</b> Mau buat berapa voucher?"
         ),
@@ -1690,14 +1739,14 @@ async def gen_voucher_confirm_callback(update: Update, context: ContextTypes.DEF
         await _safe_edit_menu(
             query,
             (
-                "ðŸŽŸï¸ <b>Generate Voucher</b>\n\n"
+                "🎟️ <b>Generate Voucher</b>\n\n"
                 "<b>Status:</b> Gagal generate voucher.\n"
                 f"<b>Error:</b> <code>{exc}</code>"
             ),
             InlineKeyboardMarkup(
                 [
                     [InlineKeyboardButton("Coba Lagi", callback_data="gen_voucher")],
-                    [InlineKeyboardButton("â†© Back", callback_data="admin_panel")],
+                    [InlineKeyboardButton("↩ Back", callback_data="admin_panel")],
                 ]
             ),
         )
@@ -1713,7 +1762,7 @@ async def gen_voucher_confirm_callback(update: Update, context: ContextTypes.DEF
     await _safe_edit_menu(
         query,
         (
-            "ðŸŽŸï¸ <b>Voucher Berhasil Dibuat</b>\n\n"
+            "🎟️ <b>Voucher Berhasil Dibuat</b>\n\n"
             f"Nominal: <b>{credits} Credits</b>\n"
             f"Jumlah: <b>{qty}</b>\n"
             f"DB: <code>{runtime.settings.voucher_db_path}</code>\n\n"
@@ -1722,8 +1771,8 @@ async def gen_voucher_confirm_callback(update: Update, context: ContextTypes.DEF
         ),
         InlineKeyboardMarkup(
             [
-                [InlineKeyboardButton("âž• Generate Lagi", callback_data="gen_voucher")],
-                [InlineKeyboardButton("â†© Back", callback_data="admin_panel")],
+                [InlineKeyboardButton("➕ Generate Lagi", callback_data="gen_voucher")],
+                [InlineKeyboardButton("↩ Back", callback_data="admin_panel")],
             ]
         ),
     )
@@ -1745,6 +1794,7 @@ async def _start_create_account_request(
     required_per_account = 2 if use_store_vcc else 1
     total_required_credits = required_per_account * account_qty
     mode_text = "VCC Store" if use_store_vcc else "VCC Pribadi"
+    vcc_source = "store" if use_store_vcc else "personal"
 
     if not _has_minimum_credit(user_id, runtime, total_required_credits):
         balance = runtime.vouchers.get_balance(user_id)
@@ -1755,25 +1805,6 @@ async def _start_create_account_request(
             f"Total biaya: <b>{total_required_credits}</b> Credits\n"
             f"Saldo kamu: <b>{balance}</b>"
         )
-
-    if use_store_vcc:
-        stock_count = get_stock_count()
-        if stock_count < account_qty:
-            return (
-                "Stok <b>VCC Store</b> tidak cukup.\n"
-                f"Kebutuhan: <b>{account_qty}</b> VCC\n"
-                f"Stok tersedia: <b>{stock_count}</b> VCC\n\n"
-                "Silakan minta admin tambah stok di <b>Admin Panel</b>."
-            )
-    else:
-        vcc_count = len(get_user_vccs(user_id))
-        if vcc_count < account_qty:
-            return (
-                "VCC pribadi kamu tidak cukup.\n"
-                f"Kebutuhan: <b>{account_qty}</b> VCC\n"
-                f"Tersimpan: <b>{vcc_count}</b> VCC\n\n"
-                "Silakan tambah VCC dulu di menu <b>Vcc</b>."
-            )
 
     password = get_user_password(user_id).strip()
     if not password:
@@ -1799,45 +1830,99 @@ async def _start_create_account_request(
             "- Atau minta admin set default domain di <b>Admin Panel</b>"
         )
 
+    reserved_vccs: list[str] = []
+    if use_store_vcc:
+        reserved_vccs = pop_stock_vccs(account_qty)
+        if len(reserved_vccs) < account_qty:
+            # Safety rollback if partial data is returned by storage layer.
+            if reserved_vccs:
+                return_stock_vccs(reserved_vccs)
+            stock_count = get_stock_count()
+            return (
+                "Stok <b>VCC Store</b> tidak cukup.\n"
+                f"Kebutuhan: <b>{account_qty}</b> VCC\n"
+                f"Stok tersedia: <b>{stock_count}</b> VCC\n\n"
+                "Silakan minta admin tambah stok di <b>Admin Panel</b>."
+            )
+    else:
+        reserved_vccs = pop_user_vccs(user_id, account_qty)
+        if len(reserved_vccs) < account_qty:
+            if reserved_vccs:
+                return_user_vccs(user_id, reserved_vccs)
+            vcc_count = len(get_user_vccs(user_id))
+            return (
+                "VCC pribadi kamu tidak cukup.\n"
+                f"Kebutuhan: <b>{account_qty}</b> VCC\n"
+                f"Tersimpan: <b>{vcc_count}</b> VCC\n\n"
+                "Silakan tambah VCC dulu di menu <b>Vcc</b>."
+            )
+
     signup_url = "https://zoom.us/signup"
     job = runtime.jobs.add_job(user_id=user_id, url=signup_url)
     if not job:
+        rolled_back = (
+            return_stock_vccs(reserved_vccs)
+            if use_store_vcc
+            else return_user_vccs(user_id, reserved_vccs)
+        )
+        rollback_line = f"VCC dikembalikan: <b>{rolled_back}</b>\n\n" if reserved_vccs else ""
         active_job = runtime.jobs.get_active_job_for_user(user_id)
         if active_job:
             return (
                 "Kamu masih punya request create yang berjalan.\n"
                 f"Job aktif: <code>{active_job.job_id}</code>\n"
                 f"Status: <b>{active_job.status}</b>\n\n"
+                f"{rollback_line}"
                 "Tunggu proses selesai, lalu coba lagi."
             )
-        return "Masih ada job aktif. Tunggu proses selesai lalu coba lagi."
+        return f"Masih ada job aktif. Tunggu proses selesai lalu coba lagi.\n\n{rollback_line}".strip()
 
     context.chat_data["create_account_vcc_mode"] = "vcc_store" if use_store_vcc else "vcc_personal"
     context.chat_data["create_account_trial_days"] = trial_days
     context.chat_data["create_account_qty"] = account_qty
 
     loop = asyncio.get_running_loop()
-    runtime.executor.submit(
-        process_selenium_job,
-        loop,
-        context.application,
-        runtime,
-        update.effective_chat.id,
-        user_id,
-        job.job_id,
-        signup_url,
-        account_qty,
-        mode_text,
-        trial_days,
-    )
+    try:
+        runtime.executor.submit(
+            process_selenium_job,
+            loop,
+            context.application,
+            runtime,
+            update.effective_chat.id,
+            user_id,
+            job.job_id,
+            signup_url,
+            account_qty,
+            mode_text,
+            trial_days,
+            vcc_source,
+            reserved_vccs,
+            effective_domain,
+            password,
+        )
+    except Exception as exc:
+        runtime.jobs.update_job(job.job_id, status="failed", error=str(exc))
+        rolled_back = (
+            return_stock_vccs(reserved_vccs)
+            if use_store_vcc
+            else return_user_vccs(user_id, reserved_vccs)
+        )
+        return (
+            "Gagal memulai job create.\n"
+            f"Error: <code>{exc}</code>\n"
+            f"VCC dikembalikan: <b>{rolled_back}</b>"
+        )
 
     domain_source = "custom domain kamu" if custom_domain else "default domain admin"
     balance = runtime.vouchers.get_balance(user_id)
-    mode_extra = ""
+    mode_extra = f"VCC reserved di awal: <b>{len(reserved_vccs)}</b>\n"
     if use_store_vcc:
-        mode_extra = f"Stok VCC Store saat ini: <b>{get_stock_count()}</b>\n"
+        mode_extra += f"Stok VCC Store setelah reserve: <b>{get_stock_count()}</b>\n"
+    else:
+        mode_extra += f"Sisa VCC pribadi setelah reserve: <b>{len(get_user_vccs(user_id))}</b>\n"
 
     return (
+        "<blockquote>"
         "Create Account dipilih.\n"
         f"Mode: <b>{mode_text}</b>\n"
         f"Durasi trial: <b>{trial_days} Hari</b>\n"
@@ -1847,10 +1932,9 @@ async def _start_create_account_request(
         f"Saldo saat ini: <b>{balance}</b>\n"
         f"{mode_extra}"
         f"Domain aktif: <code>{effective_domain}</code>\n"
-        f"Sumber domain: <b>{domain_source}</b>\n\n"
+        f"Sumber domain: <b>{domain_source}</b>"
+        "</blockquote>\n\n"
         f"Job ID: <code>{job.job_id}</code>\n"
-        f"Start URL: <code>{signup_url}</code>\n"
-        "Selenium sedang dijalankan di background thread dengan profile terpisah per request."
     )
 
 
@@ -1903,6 +1987,7 @@ async def _handle_create_account_custom_qty_input(
 
     context.chat_data.pop("awaiting_input", None)
     use_store_vcc = mode == "vcc_store"
+    prompt_msg_id = context.chat_data.get("prompt_msg_id")
     result_text = await _start_create_account_request(
         update,
         context,
@@ -1911,7 +1996,16 @@ async def _handle_create_account_custom_qty_input(
         trial_days=trial_days,
         account_qty=qty,
     )
+    if _is_create_job_started_message(result_text) and update.effective_chat and isinstance(prompt_msg_id, int):
+        try:
+            await context.application.bot.delete_message(
+                chat_id=update.effective_chat.id,
+                message_id=prompt_msg_id,
+            )
+        except Exception:
+            pass
     _clear_create_account_flow(context)
+    context.chat_data.pop("prompt_msg_id", None)
     await update.message.reply_text(result_text, parse_mode="HTML")
     return True
 
@@ -2051,7 +2145,7 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, runt
         await _safe_edit_menu(
             query,
             (
-                "ðŸš€ <b>Pilih Sumber VCC</b>\n\n"
+                "🚀 <b>Pilih Sumber VCC</b>\n\n"
                 "Pilih metode pembuatan akun:\n"
                 "- Gunakan VCC Store: <b>2 Credits</b>\n"
                 "- Gunakan VCC Pribadi: <b>1 Credit</b>"
@@ -2063,15 +2157,41 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, runt
     if data in {"create_account_vcc_store", "create_account_vcc_personal"}:
         mode = "vcc_store" if data == "create_account_vcc_store" else "vcc_personal"
         mode_text = "VCC Store" if mode == "vcc_store" else "VCC Pribadi"
+
+        if mode == "vcc_store":
+            stock_count = get_stock_count()
+            if stock_count <= 0:
+                await query.answer(
+                    "Stok VCC Store kosong. Minta admin tambah stok dulu di Admin Panel.",
+                    show_alert=True,
+                )
+                return
+        else:
+            personal_count = len(get_user_vccs(user_id))
+            if personal_count <= 0:
+                await query.answer(
+                    "VCC pribadi kamu kosong. Tambahkan dulu di menu VCC.",
+                    show_alert=True,
+                )
+                return
+
         context.chat_data["create_account_vcc_mode"] = mode
         context.chat_data.pop("create_account_trial_days", None)
         context.chat_data.pop("create_account_qty", None)
         await query.answer()
+
+        stock_line = ""
+        if mode == "vcc_store":
+            stock_line = f"Stok tersedia saat ini: <b>{get_stock_count()}</b> VCC\n\n"
+        else:
+            stock_line = f"VCC pribadi tersedia saat ini: <b>{len(get_user_vccs(user_id))}</b> VCC\n\n"
+
         await _safe_edit_menu(
             query,
             (
-                "ðŸ—“ <b>Pilih Durasi Trial</b>\n\n"
+                "🗓 <b>Pilih Durasi Trial</b>\n\n"
                 f"Mode terpilih: <b>{mode_text}</b>\n\n"
+                f"{stock_line}"
                 "Step 1: Pilih durasi trial Zoom:"
             ),
             _create_account_duration_keyboard(),
@@ -2090,7 +2210,7 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, runt
         await _safe_edit_menu(
             query,
             (
-                "ðŸ”¢ <b>Pilih Jumlah Akun</b>\n\n"
+                "🔢 <b>Pilih Jumlah Akun</b>\n\n"
                 f"Mode: <b>{mode_text}</b>\n"
                 f"Durasi trial: <b>{trial_days} Hari</b>\n\n"
                 "Step 2: Mau membuat berapa akun?"
@@ -2107,6 +2227,30 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, runt
             await query.answer("State create belum lengkap. Ulangi dari awal.", show_alert=True)
             return
         account_qty = int(data.rsplit("_", 1)[1])
+
+        if mode == "vcc_store":
+            available_stock = get_stock_count()
+            if available_stock < account_qty:
+                await query.answer(
+                    (
+                        "Stok VCC Store tidak cukup.\n"
+                        f"Kebutuhan: {account_qty} | Tersedia: {available_stock}"
+                    ),
+                    show_alert=True,
+                )
+                return
+        else:
+            available_personal = len(get_user_vccs(user_id))
+            if available_personal < account_qty:
+                await query.answer(
+                    (
+                        "VCC pribadi tidak cukup.\n"
+                        f"Kebutuhan: {account_qty} | Tersedia: {available_personal}"
+                    ),
+                    show_alert=True,
+                )
+                return
+
         await query.answer()
         result_text = await _start_create_account_request(
             update,
@@ -2116,6 +2260,27 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, runt
             trial_days=trial_days,
             account_qty=account_qty,
         )
+
+        stock_shortage_markers = (
+            "Stok <b>VCC Store</b> tidak cukup.",
+            "VCC pribadi kamu tidak cukup.",
+        )
+        if result_text.startswith(stock_shortage_markers):
+            plain_text = (
+                result_text.replace("<b>", "")
+                .replace("</b>", "")
+                .replace("<code>", "")
+                .replace("</code>", "")
+            )
+            await query.answer(plain_text, show_alert=True)
+            return
+
+        if _is_create_job_started_message(result_text):
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+
         _clear_create_account_flow(context)
         await query.message.reply_text(result_text, parse_mode="HTML")
         return
@@ -2133,7 +2298,7 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, runt
         await _safe_edit_menu(
             query,
             (
-                "ðŸ”¢ <b>Jumlah Akun Custom</b>\n\n"
+                "🔢 <b>Jumlah Akun Custom</b>\n\n"
                 "Kirim jumlah akun custom di chat ini.\n"
                 "Ketentuan: angka bulat <b>> 3</b>."
             ),
@@ -2171,6 +2336,7 @@ def register_handlers(application: Application, runtime: Runtime) -> None:
     application.add_handler(CommandHandler("start", partial(start_command, runtime=runtime)))
     application.add_handler(CommandHandler("run", partial(run_command, runtime=runtime)))
     application.add_handler(CommandHandler("status", partial(status_command, runtime=runtime)))
+    application.add_handler(CommandHandler("otp", partial(otp_command, runtime=runtime)))
     application.add_handler(CommandHandler("redeem", partial(redeem_command, runtime=runtime)))
     application.add_handler(CommandHandler("add_vcc", add_vcc_command))
     application.add_handler(CommandHandler("add_default_domain", partial(add_default_domain_command, runtime=runtime)))
