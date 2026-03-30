@@ -57,7 +57,7 @@ def _start_keyboard(is_admin: bool = False, has_credits: bool = False) -> Inline
         buttons.append([InlineKeyboardButton("🛠 Admin Panel", callback_data="admin_panel")])
 
     if has_credits:
-
+        buttons.append([InlineKeyboardButton("🎁 Redeem Voucher", callback_data="redeem_voucher")])
         buttons.append([InlineKeyboardButton("🚀 Mulai Buat Akun", callback_data="create_account")])
         buttons.append([InlineKeyboardButton("📅 Schedule Meeting", callback_data="schedule_meeting")])
         buttons.append(
@@ -234,7 +234,7 @@ def _is_create_job_started_message(text: str) -> bool:
 
 
 def _can_bypass_credit_check(user_id: int, runtime: Runtime) -> bool:
-    return _is_admin(user_id, runtime)
+    return _is_admin(user_id, runtime) or (user_id in runtime.settings.credited_user_ids)
 
 
 def _has_minimum_credit(user_id: int, runtime: Runtime, required: int) -> bool:
@@ -311,6 +311,7 @@ def _resolve_user_flags(user_id: int, runtime: Runtime) -> tuple[bool, bool]:
     is_admin = user_id in runtime.settings.admin_user_ids
     has_credits = (
         is_admin
+        or (user_id in runtime.settings.credited_user_ids)
         or (runtime.vouchers.get_balance(user_id) > 0)
     )
     return is_admin, has_credits
@@ -1898,7 +1899,6 @@ async def _start_create_account_request(
             reserved_vccs,
             effective_domain,
             password,
-            required_per_account,
         )
     except Exception as exc:
         runtime.jobs.update_job(job.job_id, status="failed", error=str(exc))
