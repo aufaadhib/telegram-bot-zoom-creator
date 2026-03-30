@@ -1745,6 +1745,7 @@ async def _start_create_account_request(
     required_per_account = 2 if use_store_vcc else 1
     total_required_credits = required_per_account * account_qty
     mode_text = "VCC Store" if use_store_vcc else "VCC Pribadi"
+    vcc_source = "store" if use_store_vcc else "personal"
 
     if not _has_minimum_credit(user_id, runtime, total_required_credits):
         balance = runtime.vouchers.get_balance(user_id)
@@ -1755,25 +1756,6 @@ async def _start_create_account_request(
             f"Total biaya: <b>{total_required_credits}</b> Credits\n"
             f"Saldo kamu: <b>{balance}</b>"
         )
-
-    if use_store_vcc:
-        stock_count = get_stock_count()
-        if stock_count < account_qty:
-            return (
-                "Stok <b>VCC Store</b> tidak cukup.\n"
-                f"Kebutuhan: <b>{account_qty}</b> VCC\n"
-                f"Stok tersedia: <b>{stock_count}</b> VCC\n\n"
-                "Silakan minta admin tambah stok di <b>Admin Panel</b>."
-            )
-    else:
-        vcc_count = len(get_user_vccs(user_id))
-        if vcc_count < account_qty:
-            return (
-                "VCC pribadi kamu tidak cukup.\n"
-                f"Kebutuhan: <b>{account_qty}</b> VCC\n"
-                f"Tersimpan: <b>{vcc_count}</b> VCC\n\n"
-                "Silakan tambah VCC dulu di menu <b>Vcc</b>."
-            )
 
     password = get_user_password(user_id).strip()
     if not password:
@@ -1799,43 +1781,97 @@ async def _start_create_account_request(
             "- Atau minta admin set default domain di <b>Admin Panel</b>"
         )
 
+    reserved_vccs: list[str] = []
+    if use_store_vcc:
+        reserved_vccs = pop_stock_vccs(account_qty)
+        if len(reserved_vccs) < account_qty:
+            # Safety rollback if partial data is returned by storage layer.
+            if reserved_vccs:
+                return_stock_vccs(reserved_vccs)
+            stock_count = get_stock_count()
+            return (
+                "Stok <b>VCC Store</b> tidak cukup.\n"
+                f"Kebutuhan: <b>{account_qty}</b> VCC\n"
+                f"Stok tersedia: <b>{stock_count}</b> VCC\n\n"
+                "Silakan minta admin tambah stok di <b>Admin Panel</b>."
+            )
+    else:
+        reserved_vccs = pop_user_vccs(user_id, account_qty)
+        if len(reserved_vccs) < account_qty:
+            if reserved_vccs:
+                return_user_vccs(user_id, reserved_vccs)
+            vcc_count = len(get_user_vccs(user_id))
+            return (
+                "VCC pribadi kamu tidak cukup.\n"
+                f"Kebutuhan: <b>{account_qty}</b> VCC\n"
+                f"Tersimpan: <b>{vcc_count}</b> VCC\n\n"
+                "Silakan tambah VCC dulu di menu <b>Vcc</b>."
+            )
+
     signup_url = "https://zoom.us/signup"
     job = runtime.jobs.add_job(user_id=user_id, url=signup_url)
     if not job:
+        rolled_back = (
+            return_stock_vccs(reserved_vccs)
+            if use_store_vcc
+            else return_user_vccs(user_id, reserved_vccs)
+        )
+        rollback_line = f"VCC dikembalikan: <b>{rolled_back}</b>\n\n" if reserved_vccs else ""
         active_job = runtime.jobs.get_active_job_for_user(user_id)
         if active_job:
             return (
                 "Kamu masih punya request create yang berjalan.\n"
                 f"Job aktif: <code>{active_job.job_id}</code>\n"
                 f"Status: <b>{active_job.status}</b>\n\n"
+                f"{rollback_line}"
                 "Tunggu proses selesai, lalu coba lagi."
             )
-        return "Masih ada job aktif. Tunggu proses selesai lalu coba lagi."
+        return (
+            "Masih ada job aktif. Tunggu proses selesai lalu coba lagi.\n\n"
+            f"{rollback_line}".strip()
+        )
 
     context.chat_data["create_account_vcc_mode"] = "vcc_store" if use_store_vcc else "vcc_personal"
     context.chat_data["create_account_trial_days"] = trial_days
     context.chat_data["create_account_qty"] = account_qty
 
     loop = asyncio.get_running_loop()
-    runtime.executor.submit(
-        process_selenium_job,
-        loop,
-        context.application,
-        runtime,
-        update.effective_chat.id,
-        user_id,
-        job.job_id,
-        signup_url,
-        account_qty,
-        mode_text,
-        trial_days,
-    )
+    try:
+        runtime.executor.submit(
+            process_selenium_job,
+            loop,
+            context.application,
+            runtime,
+            update.effective_chat.id,
+            user_id,
+            job.job_id,
+            signup_url,
+            account_qty,
+            mode_text,
+            trial_days,
+            vcc_source,
+            reserved_vccs,
+        )
+    except Exception as exc:
+        runtime.jobs.update_job(job.job_id, status="failed", error=str(exc))
+        rolled_back = (
+            return_stock_vccs(reserved_vccs)
+            if use_store_vcc
+            else return_user_vccs(user_id, reserved_vccs)
+        )
+        return (
+            "Gagal memulai job create.\n"
+            f"Error: <code>{exc}</code>\n"
+            f"VCC dikembalikan: <b>{rolled_back}</b>"
+        )
 
     domain_source = "custom domain kamu" if custom_domain else "default domain admin"
     balance = runtime.vouchers.get_balance(user_id)
-    mode_extra = ""
+    mode_extra = f"VCC reserved di awal: <b>{len(reserved_vccs)}</b>\n"
     if use_store_vcc:
-        mode_extra = f"Stok VCC Store saat ini: <b>{get_stock_count()}</b>\n"
+        mode_extra += f"Stok VCC Store setelah reserve: <b>{get_stock_count()}</b>\n"
+    else:
+        mode_extra += f"Sisa VCC pribadi setelah reserve: <b>{len(get_user_vccs(user_id))}</b>\n"
 
     return (
         "Create Account dipilih.\n"
