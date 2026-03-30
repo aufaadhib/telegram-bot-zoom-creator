@@ -1826,10 +1826,7 @@ async def _start_create_account_request(
                 f"{rollback_line}"
                 "Tunggu proses selesai, lalu coba lagi."
             )
-        return (
-            "Masih ada job aktif. Tunggu proses selesai lalu coba lagi.\n\n"
-            f"{rollback_line}".strip()
-        )
+        return f"Masih ada job aktif. Tunggu proses selesai lalu coba lagi.\n\n{rollback_line}".strip()
 
     context.chat_data["create_account_vcc_mode"] = "vcc_store" if use_store_vcc else "vcc_personal"
     context.chat_data["create_account_trial_days"] = trial_days
@@ -1886,7 +1883,7 @@ async def _start_create_account_request(
         f"Sumber domain: <b>{domain_source}</b>\n\n"
         f"Job ID: <code>{job.job_id}</code>\n"
         f"Start URL: <code>{signup_url}</code>\n"
-        "Selenium sedang dijalankan di background thread dengan profile terpisah per request."
+        "Selenium sedang dijalankan di background thread dengan profile terpisah per akun/run."
     )
 
 
