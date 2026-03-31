@@ -3,13 +3,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import html
 import io
 import logging
+from pathlib import Path
 import threading
 from typing import Any
 
 from telegram.ext import Application
 
 from bot.runtime import Runtime
-from lib.selenium.worker import run_visit_job, run_zoom_signup_initial_job
+from lib.selenium.worker import WorkerStepError, run_visit_job, run_zoom_signup_initial_job
 from utils.user_manager import pop_user_vccs, return_user_vccs
 from utils.vcc_stock_manager import pop_stock_vccs, return_stock_vccs
 
@@ -113,6 +114,31 @@ def send_file_from_thread(
         future.result(timeout=30)
     except Exception:
         logger.exception("Gagal kirim file dari thread.")
+
+
+def send_local_file_from_thread(
+    loop: asyncio.AbstractEventLoop,
+    app: Application,
+    chat_id: int,
+    file_path: str,
+) -> None:
+    path = Path(file_path)
+    if not path.exists() or not path.is_file():
+        return
+
+    async def _send() -> None:
+        with path.open("rb") as fh:
+            await app.bot.send_document(
+                chat_id=chat_id,
+                document=fh,
+                filename=path.name,
+            )
+
+    future = asyncio.run_coroutine_threadsafe(_send(), loop)
+    try:
+        future.result(timeout=30)
+    except Exception:
+        logger.exception("Gagal kirim local file dari thread: %s", file_path)
 
 
 def _build_loading_bar(percent: int) -> str:
@@ -289,6 +315,7 @@ def _run_one_visit_with_global_slot(
                         auto_close=runtime.settings.selenium_auto_close,
                         locale=runtime.settings.selenium_locale,
                         timezone=runtime.settings.selenium_timezone,
+                        window_size=runtime.settings.selenium_window_size,
                         chromedriver_path=runtime.settings.chromedriver_path,
                         chrome_binary=runtime.settings.chrome_binary,
                     )
@@ -302,6 +329,7 @@ def _run_one_visit_with_global_slot(
                         auto_close=runtime.settings.selenium_auto_close,
                         locale=runtime.settings.selenium_locale,
                         timezone=runtime.settings.selenium_timezone,
+                        window_size=runtime.settings.selenium_window_size,
                         chromedriver_path=runtime.settings.chromedriver_path,
                         chrome_binary=runtime.settings.chrome_binary,
                     )
@@ -321,6 +349,11 @@ def _run_one_visit_with_global_slot(
                 }
             except Exception as exc:
                 message = str(exc)
+                failed_stage = ""
+                failure_screenshot_path = ""
+                if isinstance(exc, WorkerStepError):
+                    failed_stage = str(exc.stage or "").strip()
+                    failure_screenshot_path = str(exc.screenshot_path or "").strip()
                 if (
                     "CARD_INVALID:" in message
                     and runtime.settings.payment_retry_on_card_error
@@ -345,6 +378,8 @@ def _run_one_visit_with_global_slot(
                     "vcc": current_vcc,
                     "vcc_returnable": True,
                     "retry_failed_vccs": [value for value in attempted_vccs[:-1] if value],
+                    "failed_stage": failed_stage,
+                    "failure_screenshot_path": failure_screenshot_path,
                     "error": message,
                 }
     finally:
@@ -473,7 +508,8 @@ def process_selenium_job(
             email = str(item.get("generated_email", "")).strip()
             if not email:
                 continue
-            success_accounts.append(f"{email}|{signup_password}")
+            inbox_link = f"https://generator.email/inbox7/{email}"
+            success_accounts.append(f"{email}|{signup_password}|{inbox_link}")
 
         account_preview = success_accounts[:10]
         hidden_accounts = len(success_accounts) - len(account_preview)
@@ -500,7 +536,7 @@ def process_selenium_job(
             chat_id,
             (
                 f"<blockquote>{html.escape(summary)}</blockquote>\n\n"
-                "Akun berhasil (Email|Password):\n"
+                "Akun berhasil (Email|Password|Inbox):\n"
                 f"<pre>{html.escape(account_preview_text)}</pre>\n\n"
                 "VCC berhasil:\n"
                 f"<pre>{html.escape(success_vcc_text)}</pre>\n\n"
@@ -538,6 +574,27 @@ def process_selenium_job(
             filename=f"vcc_report_{job_id}.txt",
             content="\n".join(vcc_report_lines) + "\n",
         )
+
+        failed_runs_with_screenshot = [
+            item
+            for item in runs
+            if item.get("status") == "failed" and str(item.get("failure_screenshot_path", "")).strip()
+        ]
+        for item in failed_runs_with_screenshot:
+            run_idx = int(item.get("index", 0))
+            stage = str(item.get("failed_stage", "")).strip() or "unknown"
+            send_from_thread(
+                loop,
+                app,
+                chat_id,
+                f"Run #{run_idx} gagal di step: {stage}. Screenshot dikirim.",
+            )
+            send_local_file_from_thread(
+                loop,
+                app,
+                chat_id,
+                str(item.get("failure_screenshot_path", "")).strip(),
+            )
         progress_tracker.delete()
     except Exception as exc:
         success_vccs = {

@@ -23,12 +23,20 @@ from webdriver_manager.chrome import ChromeDriverManager
 logger = logging.getLogger("telegram-selenium-bot.selenium")
 
 
+class WorkerStepError(RuntimeError):
+    def __init__(self, message: str, stage: str = "", screenshot_path: str = "") -> None:
+        super().__init__(message)
+        self.stage = stage
+        self.screenshot_path = screenshot_path
+
+
 def _build_options(
     profile_root: Path,
     profile_key: str,
     headless: bool,
     chrome_binary: str,
     locale: str = "id-ID",
+    window_size: str = "",
 ) -> Options:
     profile_path = profile_root / f"user_{profile_key}"
     profile_path.mkdir(parents=True, exist_ok=True)
@@ -48,6 +56,8 @@ def _build_options(
             "intl.accept_languages": f"{locale},id,en-US,en",
         },
     )
+    if window_size:
+        options.add_argument(f"--window-size={window_size}")
 
     if headless:
         options.add_argument("--headless=new")
@@ -180,16 +190,19 @@ def _run_zoom_signup_initial(
     auto_close: bool = True,
     locale: str = "id-ID",
     timezone: str = "Asia/Jakarta",
+    window_size: str = "",
     chromedriver_path: str = "",
     chrome_binary: str = "",
 ) -> Dict[str, str]:
     driver = webdriver.Chrome(
         service=_build_service(chromedriver_path),
-        options=_build_options(profile_root, profile_key, headless, chrome_binary, locale),
+        options=_build_options(profile_root, profile_key, headless, chrome_binary, locale, window_size),
     )
     wait = WebDriverWait(driver, wait_timeout)
 
+    current_stage = "init_browser"
     try:
+        current_stage = "open_signup_page"
         _emit_progress(progress_callback, "Membuka halaman signup...")
         _apply_browser_region(driver, locale=locale, timezone=timezone)
         domain = _normalize_email_domain(email_domain)
@@ -202,11 +215,13 @@ def _run_zoom_signup_initial(
         wait.until(lambda d: d.execute_script("return document.readyState") == "complete")
         logger.info("Page loaded | %s | url=%s", log_ctx, driver.current_url)
 
+        current_stage = "fill_birth_year"
         year_input = wait.until(EC.visibility_of_element_located((By.ID, "year")))
         year_input.clear()
         year_input.send_keys(birth_year)
         logger.info("Birth year filled | %s | year=%s", log_ctx, birth_year)
 
+        current_stage = "click_continue_birth_year"
         continue_btn_birth = wait.until(
             EC.element_to_be_clickable((By.CSS_SELECTOR, "button[data-testid='continue-btn']"))
         )
@@ -214,11 +229,13 @@ def _run_zoom_signup_initial(
         logger.info("Continue clicked after birth year | %s", log_ctx)
         _emit_progress(progress_callback, "Tahun lahir diisi.")
 
+        current_stage = "fill_email"
         email_input = wait.until(EC.visibility_of_element_located((By.ID, "email")))
         email_input.clear()
         email_input.send_keys(email)
         logger.info("Email filled | %s", log_ctx)
 
+        current_stage = "click_continue_email"
         continue_btn_email = wait.until(
             EC.element_to_be_clickable((By.CSS_SELECTOR, "button[data-testid='continue-btn']"))
         )
@@ -232,6 +249,7 @@ def _run_zoom_signup_initial(
         _emit_progress(progress_callback, f"State setelah email: {post_email_state}")
 
         if post_email_state == "otp":
+            current_stage = "otp_fetch_and_fill"
             logger.info("OTP container detected after adaptive check | %s", log_ctx)
             logger.info("OTP container visible | %s", log_ctx)
             otp_source = "generator.email"
@@ -267,11 +285,13 @@ def _run_zoom_signup_initial(
                 digit_box.send_keys(digit)
             logger.info("OTP digits filled (6) | %s", log_ctx)
 
+            current_stage = "click_verify_otp"
             verify_button = wait.until(lambda d: _find_active_verify_button(d))
             verify_button.click()
             logger.info("Verify button clicked | %s", log_ctx)
             _emit_progress(progress_callback, "OTP diverifikasi.")
 
+            current_stage = "wait_post_otp_transition"
             wait.until(
                 lambda d: bool(d.find_elements(By.ID, "firstName"))
                 or not pin_container.is_displayed()
@@ -286,6 +306,7 @@ def _run_zoom_signup_initial(
                 "Kemungkinan ada step perantara baru (continue-btn) yang belum tertangani."
             )
 
+        current_stage = "fill_name_password"
         first_name_input = wait.until(EC.visibility_of_element_located((By.ID, "firstName")))
         last_name_input = wait.until(EC.visibility_of_element_located((By.ID, "lastName")))
         password_input = wait.until(
@@ -301,6 +322,7 @@ def _run_zoom_signup_initial(
         logger.info("Name + password filled | %s", log_ctx)
         _emit_progress(progress_callback, "Nama & password diisi.")
 
+        current_stage = "click_continue_name_form"
         continue_after_name = wait.until(
             lambda d: _find_active_continue_button(d, include_labels=("lanjutkan", "continue"))
         )
@@ -308,6 +330,7 @@ def _run_zoom_signup_initial(
         logger.info("Continue clicked after name/password | %s", log_ctx)
         _emit_progress(progress_callback, "Lanjut dari form nama.")
 
+        current_stage = "click_start_trial"
         start_trial_btn = wait.until(
             EC.element_to_be_clickable((By.CSS_SELECTOR, "button.start-free-trial[aria-disabled='false']"))
         )
@@ -315,11 +338,13 @@ def _run_zoom_signup_initial(
         logger.info("Start free trial clicked | %s", log_ctx)
         _emit_progress(progress_callback, "Mulai uji coba gratis.")
 
+        current_stage = "select_trial_plan"
         plan_option = wait.until(lambda d: _find_trial_plan_option(d, trial_days))
         _click_element(driver, plan_option)
         logger.info("Plan selected | %s | trial_days=%s", log_ctx, trial_days)
         _emit_progress(progress_callback, f"Paket {trial_days} hari dipilih.")
 
+        current_stage = "click_continue_checkout"
         checkout_continue = wait.until(
             lambda d: _find_active_checkout_continue_button(d)
         )
@@ -327,6 +352,7 @@ def _run_zoom_signup_initial(
         logger.info("Checkout continue clicked | %s", log_ctx)
         _emit_progress(progress_callback, "Lanjut ke checkout.")
 
+        current_stage = "wait_checkout_page"
         wait.until(
             lambda d: "checkout" in d.current_url.lower()
             or bool(d.find_elements(By.CSS_SELECTOR, "input[aria-label='Nama Kartu']"))
@@ -335,6 +361,7 @@ def _run_zoom_signup_initial(
         logger.info("Checkout page reached | %s | url=%s", log_ctx, driver.current_url)
 
         # Address form
+        current_stage = "fill_street_address"
         street_input = wait.until(
             lambda d: _find_visible_input(
                 d,
@@ -348,6 +375,7 @@ def _run_zoom_signup_initial(
         _emit_progress(progress_callback, "Alamat jalan diisi.")
         _dismiss_address_autocomplete(driver, street_input)
 
+        current_stage = "fill_zip_city_state"
         zip_input = wait.until(EC.visibility_of_element_located((By.ID, "addr-zip")))
         city_input = wait.until(EC.visibility_of_element_located((By.ID, "addr-city")))
         state_input = wait.until(EC.visibility_of_element_located((By.ID, "addr-state")))
@@ -357,11 +385,13 @@ def _run_zoom_signup_initial(
         logger.info("Zip/City/State filled | %s", log_ctx)
         _emit_progress(progress_callback, "Zip, kota, provinsi diisi.")
 
+        current_stage = "select_country"
         country_input = wait.until(lambda d: _find_country_dropdown_input(d))
         _select_dropdown_value(driver, country_input, "Indonesia")
         logger.info("Country selected | %s", log_ctx)
         _emit_progress(progress_callback, "Negara dipilih.")
 
+        current_stage = "select_account_type"
         account_type_input = wait.until(lambda d: _find_account_type_dropdown_input(d))
         _select_dropdown_value_any(
             driver,
@@ -371,6 +401,7 @@ def _run_zoom_signup_initial(
         logger.info("Account type selected | %s", log_ctx)
         _emit_progress(progress_callback, "Jenis akun dipilih.")
 
+        current_stage = "click_continue_payment"
         payment_continue_btn = wait.until(
             lambda d: _find_active_payment_continue_button(d)
         )
@@ -378,16 +409,19 @@ def _run_zoom_signup_initial(
         logger.info("Continue to payment clicked | %s", log_ctx)
         _emit_progress(progress_callback, "Lanjut ke pembayaran.")
 
+        current_stage = "wait_payment_page"
         wait.until(
             lambda d: bool(d.find_elements(By.CSS_SELECTOR, "button[data-testid='checkout-button-place-order']"))
             or "payment" in d.current_url.lower()
         )
         logger.info("Payment page reached after address submit | %s | url=%s", log_ctx, driver.current_url)
 
+        current_stage = "prepare_payment_vcc"
         card_data = _parse_payment_vcc(payment_vcc)
         if not card_data:
             raise RuntimeError("CARD_MISSING: Data kartu tidak tersedia.")
 
+        current_stage = "fill_payment_form"
         _fill_input_any_context(
             driver,
             wait,
@@ -442,6 +476,7 @@ def _run_zoom_signup_initial(
         logger.info("Payment form filled | %s | card=****%s", log_ctx, card_data["number"][-4:])
         _emit_progress(progress_callback, f"Form pembayaran diisi (kartu ****{card_data['number'][-4:]}).")
 
+        current_stage = "click_place_order"
         place_order_btn = wait.until(
             lambda d: _find_active_place_order_button(d)
         )
@@ -449,7 +484,8 @@ def _run_zoom_signup_initial(
         logger.info("Place order clicked | %s", log_ctx)
         _emit_progress(progress_callback, "Buat pesanan diklik.")
 
-        payment_status, payment_message = _wait_payment_result(driver, timeout_sec=20)
+        current_stage = "wait_payment_result"
+        payment_status, payment_message = _wait_payment_result(driver, timeout_sec=45)
         if payment_status == "error":
             if "nomor kartu kredit yang benar" in _normalize_text(payment_message):
                 raise RuntimeError(f"CARD_INVALID: {payment_message}")
@@ -469,14 +505,49 @@ def _run_zoom_signup_initial(
             "generated_email": email,
             "otp_source": otp_source,
         }
-    except Exception:
-        logger.exception("Zoom signup initial failed | profile=%s", profile_key)
-        raise
+    except Exception as exc:
+        screenshot_path = _capture_failure_screenshot(
+            driver=driver,
+            profile_root=profile_root,
+            profile_key=profile_key,
+            stage=current_stage,
+        )
+        logger.exception(
+            "Zoom signup initial failed | profile=%s | stage=%s | screenshot=%s",
+            profile_key,
+            current_stage,
+            screenshot_path or "-",
+        )
+        raise WorkerStepError(
+            str(exc),
+            stage=current_stage,
+            screenshot_path=screenshot_path,
+        ) from exc
     finally:
         if auto_close:
             driver.quit()
         else:
             logger.warning("Browser tetap terbuka (auto close OFF) | profile=%s", profile_key)
+
+
+def _capture_failure_screenshot(
+    driver: webdriver.Chrome,
+    profile_root: Path,
+    profile_key: str,
+    stage: str,
+) -> str:
+    try:
+        output_dir = profile_root / "_failures"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        safe_stage = re.sub(r"[^a-zA-Z0-9_.-]+", "_", (stage or "unknown")).strip("_") or "unknown"
+        filename = f"{profile_key}_{safe_stage}_{int(time.time() * 1000)}.png"
+        path = output_dir / filename
+        ok = driver.save_screenshot(str(path))
+        if ok:
+            return str(path.resolve())
+    except Exception:
+        logger.exception("Gagal menyimpan screenshot failure | profile=%s | stage=%s", profile_key, stage)
+    return ""
 
 
 def _find_active_verify_button(driver: webdriver.Chrome):
@@ -839,9 +910,16 @@ def _find_active_place_order_button(driver: webdriver.Chrome):
     return False
 
 
-def _wait_payment_result(driver: webdriver.Chrome, timeout_sec: int = 12) -> tuple[str, str]:
+def _wait_payment_result(driver: webdriver.Chrome, timeout_sec: int = 45) -> tuple[str, str]:
     deadline = time.monotonic() + max(1, int(timeout_sec))
     while time.monotonic() < deadline:
+        current_url = (driver.current_url or "").strip()
+        current_url_lower = current_url.lower()
+
+        # Redirect resmi sukses checkout Zoom.
+        if "/opc/buy/success" in current_url_lower:
+            return "success", current_url
+
         success_titles = driver.find_elements(By.CSS_SELECTOR, "h1.opc-succezz-thx__title")
         for element in success_titles:
             text = (element.text or "").strip()
@@ -854,10 +932,8 @@ def _wait_payment_result(driver: webdriver.Chrome, timeout_sec: int = 12) -> tup
             if text:
                 return "error", text
 
-        # Jika sudah berpindah page tanpa error lokal, anggap submit diterima.
-        current_url = (driver.current_url or "").lower()
-        if "payment" not in current_url:
-            return "success", "Payment page changed"
+        # URL transisi bisa beberapa kali redirect sebelum final success/error.
+        # Jadi jangan gagal prematur; tunggu sampai timeout.
     return "unknown", ""
 
 
@@ -907,12 +983,13 @@ def _run_single_visit(
     auto_close: bool = True,
     locale: str = "id-ID",
     timezone: str = "Asia/Jakarta",
+    window_size: str = "",
     chromedriver_path: str = "",
     chrome_binary: str = "",
 ) -> Dict[str, str]:
     driver = webdriver.Chrome(
         service=_build_service(chromedriver_path),
-        options=_build_options(profile_root, profile_key, headless, chrome_binary, locale),
+        options=_build_options(profile_root, profile_key, headless, chrome_binary, locale, window_size),
     )
     wait = WebDriverWait(driver, wait_timeout)
 
@@ -947,6 +1024,7 @@ def run_visit_job(
     auto_close: bool = True,
     locale: str = "id-ID",
     timezone: str = "Asia/Jakarta",
+    window_size: str = "",
     chromedriver_path: str = "",
     chrome_binary: str = "",
 ) -> Dict[str, str]:
@@ -959,6 +1037,7 @@ def run_visit_job(
         auto_close=auto_close,
         locale=locale,
         timezone=timezone,
+        window_size=window_size,
         chromedriver_path=chromedriver_path,
         chrome_binary=chrome_binary,
     )
@@ -979,6 +1058,7 @@ def run_zoom_signup_initial_job(
     auto_close: bool = True,
     locale: str = "id-ID",
     timezone: str = "Asia/Jakarta",
+    window_size: str = "",
     chromedriver_path: str = "",
     chrome_binary: str = "",
 ) -> Dict[str, str]:
@@ -997,6 +1077,7 @@ def run_zoom_signup_initial_job(
         auto_close=auto_close,
         locale=locale,
         timezone=timezone,
+        window_size=window_size,
         chromedriver_path=chromedriver_path,
         chrome_binary=chrome_binary,
     )
@@ -1012,6 +1093,7 @@ def run_batch_visit_job(
     auto_close: bool = True,
     locale: str = "id-ID",
     timezone: str = "Asia/Jakarta",
+    window_size: str = "",
     chromedriver_path: str = "",
     chrome_binary: str = "",
 ) -> Dict[str, Any]:
@@ -1030,6 +1112,7 @@ def run_batch_visit_job(
                 auto_close=auto_close,
                 locale=locale,
                 timezone=timezone,
+                window_size=window_size,
                 chromedriver_path=chromedriver_path,
                 chrome_binary=chrome_binary,
             )

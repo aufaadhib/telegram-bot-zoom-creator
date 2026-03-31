@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 from datetime import datetime, timedelta, timezone
 from functools import partial
 import html
@@ -41,6 +41,7 @@ from utils.vcc_stock_manager import (
     get_stock_count,
     get_stock_vccs,
     pop_stock_vccs,
+    remove_stock_vccs,
     return_stock_vccs,
 )
 
@@ -234,7 +235,7 @@ def _is_create_job_started_message(text: str) -> bool:
 
 
 def _can_bypass_credit_check(user_id: int, runtime: Runtime) -> bool:
-    return _is_admin(user_id, runtime) or (user_id in runtime.settings.credited_user_ids)
+    return _is_admin(user_id, runtime)
 
 
 def _has_minimum_credit(user_id: int, runtime: Runtime, required: int) -> bool:
@@ -311,7 +312,6 @@ def _resolve_user_flags(user_id: int, runtime: Runtime) -> tuple[bool, bool]:
     is_admin = user_id in runtime.settings.admin_user_ids
     has_credits = (
         is_admin
-        or (user_id in runtime.settings.credited_user_ids)
         or (runtime.vouchers.get_balance(user_id) > 0)
     )
     return is_admin, has_credits
@@ -670,7 +670,7 @@ async def _handle_admin_vcc_stock_input(
         return False
 
     awaiting = context.chat_data.get("awaiting_input")
-    if awaiting != "admin_vcc_stock_add":
+    if awaiting not in {"admin_vcc_stock_add", "admin_vcc_stock_delete"}:
         return False
 
     if not _is_admin(update.effective_user.id, runtime):
@@ -692,7 +692,21 @@ async def _handle_admin_vcc_stock_input(
         )
         return True
 
-    added, duplicate, invalid = add_stock_vccs(lines)
+    if awaiting == "admin_vcc_stock_add":
+        added, duplicate, invalid = add_stock_vccs(lines)
+        result_text = (
+            "💳 <b>VCC Store Update</b>\n\n"
+            f"Berhasil tambah: <b>{added}</b>\n"
+            f"Duplikat: <b>{duplicate}</b>\n"
+            f"Invalid: <b>{invalid}</b>"
+        )
+    else:
+        removed, failed = remove_stock_vccs(lines)
+        result_text = (
+            "💳 <b>VCC Store Update</b>\n\n"
+            f"Berhasil hapus: <b>{removed}</b>\n"
+            f"Tidak ditemukan/invalid: <b>{failed}</b>"
+        )
     stock_vccs = get_stock_vccs()
 
     context.chat_data.pop("awaiting_input", None)
@@ -700,10 +714,7 @@ async def _handle_admin_vcc_stock_input(
 
     await update.message.reply_text(
         (
-            "💳 <b>VCC Store Update</b>\n\n"
-            f"Berhasil tambah: <b>{added}</b>\n"
-            f"Duplikat: <b>{duplicate}</b>\n"
-            f"Invalid: <b>{invalid}</b>\n\n"
+            f"{result_text}\n\n"
             f"<b>Total stok:</b> {len(stock_vccs)} VCC\n"
             f"{_vcc_list_text(stock_vccs)}"
         ),
@@ -1196,6 +1207,7 @@ async def admin_vcc_stock_menu_callback(
     keyboard = InlineKeyboardMarkup(
         [
             [InlineKeyboardButton("➕ Add Stok VCC", callback_data="admin_vcc_stock_add")],
+            [InlineKeyboardButton("🗑 Delete Stok VCC", callback_data="admin_vcc_stock_delete")],
             [InlineKeyboardButton("🏠 Home", callback_data="back_to_start")],
         ]
     )
@@ -1239,6 +1251,46 @@ async def admin_vcc_stock_add_callback(
         "Kirim VCC per baris dengan format:\n"
         "<code>NomorKartu|MM|YY|CVV</code>\n\n"
         "Bisa banyak baris (bulk)."
+    )
+    try:
+        if query.message.photo:
+            await query.edit_message_caption(
+                caption=caption_text,
+                parse_mode="HTML",
+                reply_markup=_menu_back_keyboard("admin_vcc_stock_menu"),
+            )
+        else:
+            await query.edit_message_text(
+                text=caption_text,
+                parse_mode="HTML",
+                reply_markup=_menu_back_keyboard("admin_vcc_stock_menu"),
+            )
+    except BadRequest:
+        pass
+
+
+async def admin_vcc_stock_delete_callback(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    runtime: Runtime,
+) -> None:
+    query = update.callback_query
+    if not query or not query.message or not update.effective_user:
+        return
+    if not _is_admin(update.effective_user.id, runtime):
+        await query.answer("Akses admin ditolak.", show_alert=True)
+        return
+    await query.answer()
+
+    context.chat_data["awaiting_input"] = "admin_vcc_stock_delete"
+    context.chat_data["prompt_msg_id"] = query.message.message_id
+
+    stock_count = get_stock_count()
+    caption_text = (
+        "🗑 <b>Delete Stok VCC Store</b>\n\n"
+        f"<b>Total stok saat ini:</b> {stock_count} VCC\n\n"
+        "Kirim VCC yang ingin dihapus (boleh banyak baris):\n"
+        "<code>NomorKartu|MM|YY|CVV</code>"
     )
     try:
         if query.message.photo:
@@ -2072,6 +2124,10 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, runt
         await admin_vcc_stock_add_callback(update, context, runtime)
         return
 
+    if data == "admin_vcc_stock_delete":
+        await admin_vcc_stock_delete_callback(update, context, runtime)
+        return
+
     if data == "domain_menu":
         if _is_admin(user_id, runtime):
             await admin_domain_menu_callback(update, context, runtime)
@@ -2350,5 +2406,7 @@ def register_handlers(application: Application, runtime: Runtime) -> None:
             partial(text_message_router, runtime=runtime),
         )
     )
+
+
 
 

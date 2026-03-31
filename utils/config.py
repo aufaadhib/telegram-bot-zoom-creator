@@ -16,6 +16,7 @@ class Settings:
     selenium_locale: str
     selenium_timezone: str
     selenium_wait_timeout: int
+    selenium_window_size: str
     payment_retry_on_card_error: bool
     payment_max_card_attempts: int
     selenium_profile_dir: Path
@@ -51,6 +52,7 @@ def load_settings(base_dir: Path) -> Settings:
         selenium_locale=os.getenv("SELENIUM_LOCALE", "id-ID").strip(),
         selenium_timezone=os.getenv("SELENIUM_TIMEZONE", "Asia/Jakarta").strip(),
         selenium_wait_timeout=int(os.getenv("SELENIUM_WAIT_TIMEOUT", "20")),
+        selenium_window_size=os.getenv("SELENIUM_WINDOW_SIZE", "1366,900").strip(),
         payment_retry_on_card_error=os.getenv("PAYMENT_RETRY_ON_CARD_ERROR", "false").lower() == "true",
         payment_max_card_attempts=max(1, int(os.getenv("PAYMENT_MAX_CARD_ATTEMPTS", "3"))),
         selenium_profile_dir=(base_dir / os.getenv("SELENIUM_PROFILE_DIR", "data/driver_profiles")).resolve(),

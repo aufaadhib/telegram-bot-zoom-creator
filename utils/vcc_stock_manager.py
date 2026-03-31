@@ -132,3 +132,36 @@ def add_stock_vccs(raw_lines: list[str]) -> tuple[int, int, int]:
         payload["vccs"] = vccs
         _write_db(payload)
         return len(normalized), 0, invalid_count
+
+
+def remove_stock_vccs(raw_lines: list[str]) -> tuple[int, int]:
+    """
+    Returns: (removed_count, not_found_or_invalid_count)
+    """
+    normalized: list[str] = []
+    invalid_count = 0
+    for line in raw_lines:
+        value = _normalize_vcc(line)
+        if not value:
+            invalid_count += 1
+            continue
+        normalized.append(value)
+
+    if not normalized:
+        return 0, invalid_count
+
+    removed = 0
+    not_found = 0
+    with _LOCK:
+        payload = _read_db()
+        vccs: list[str] = list(payload["vccs"])
+        for item in normalized:
+            try:
+                vccs.remove(item)
+                removed += 1
+            except ValueError:
+                not_found += 1
+        payload["vccs"] = vccs
+        _write_db(payload)
+
+    return removed, (not_found + invalid_count)
